@@ -4,7 +4,7 @@
 
 This project is the dedicated development and maintenance workspace for the user's personal Codex plugins, skills, and their supporting bridges, including future additions. Resolve repository paths from this file's directory or from the relevant script location.
 
-- `skills/write-to-me/` and `skills/workhorse/` are the maintained skill sources. The matching directories under `~/.codex/skills/` are installation symlinks to these sources. Edit the source here; preserve skill metadata, references, scripts, and existing invocation policies.
+- `skills/write-to-me/` and `skills/workhorse/` are the maintained skill sources. Codex loads their packaged copies from the installed `gemini-baton@shigo-plugins` and `dsh-baton@shigo-plugins` plugins. Rebuild and reinstall after source changes; preserve skill metadata, references, scripts, and invocation policies.
 - `gemini-baton/` is the Python Gemini API bridge and belongs to the root Git repository.
 - `gemini-web-bridge/` is an independent, nested Git repository with its existing upstream and local changes. It is ignored by the root repository. Run its Git operations from that directory and report its changes separately. Preserve its `.git` and upstream history. Any future change to this boundary requires an explicit migration plan.
 - Root Git tracks this file, workspace tooling, maintained skills, and `gemini-baton/`. New plugins should establish their intended Git ownership before staging files. Inspect the owning repository's status before editing and preserve existing changes.

@@ -47,6 +47,15 @@ const ANY_TABLE = /^\s*\[/
 // end. Codex stops a tool call after 300 s; the server keeps each wait under that, so no
 // tool_timeout_sec is needed.
 export function editCodexConfig(text, entry) {
+  // Marketplace ownership survives Harness restarts: retain the bundled MCP
+  // transport and remove only obsolete independent registrations.
+  if (entry) {
+    let selected = false
+    for (const line of text.split(/\r?\n/)) {
+      if (ANY_TABLE.test(line)) selected = /^\s*\[plugins\.["']dsh-baton@shigo-plugins["']\]\s*(?:#.*)?$/.test(line)
+      else if (selected && /^\s*enabled\s*=\s*true\s*(?:#.*)?$/.test(line)) return editCodexConfig(text, null)
+    }
+  }
   const kept = []
   let skipping = false
   for (const line of text.split(/\r?\n/)) {

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gemini-baton",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Write to me桌面本地Codex插件，集成write-to-me技能、Python gemini-baton桥接与MIT上游Gemini Web bridge独立bundle，提供统一工具、127.0.0.1本地设置页与自动Python依赖引导。",
   "author": {
     "name": "Guanyu Chen"

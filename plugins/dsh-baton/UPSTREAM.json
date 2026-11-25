@@ -5,6 +5,7 @@
   "license": "MIT",
   "copyright": "Copyright (c) 2026 JialaoLiu",
   "vendored_prefix": "app",
+  "includes_local_modifications": true,
   "sha256": {
     "app/LICENSE": "b861687b5c8ef53df7baf911cab582831f271d9057996e7f853a6920864d22ce",
     "app/host/LICENSE": "b861687b5c8ef53df7baf911cab582831f271d9057996e7f853a6920864d22ce",
@@ -22,7 +23,7 @@
     "app/src/evidence.mjs": "93ccc4e3b06c82f3477ba972b52ccba1f4044df0c49f1ccc41b4a1111f37fead",
     "app/src/folder.mjs": "554a3299fa012278d17e3e3ee2b8f00156ccaff1d24b73b982a31abe62848841",
     "app/src/mcp.mjs": "a0fa5759e515522ac096ad4b52fbf74a7bc97349cc0065650160c34c071e10e0",
-    "app/src/register.mjs": "c1c13609b304fc65c16135a044b6f2a733e9d3a3b1a73fc1593c69d4eecbdad3",
+    "app/src/register.mjs": "53dc7d5e0cb5fa9ec779170aa60896c01fc1a3fabffecec6ebfb61e10f2833bc",
     "app/src/server.mjs": "76dc49354e99e398b55c92943af2381248437e6cbca3c2d463701c9df4abfea5",
     "app/src/setup.mjs": "7c18628fedbc8e64db41e9cebe91e716e95a76d27c62f43c910bb09ab8cdbf0d"
   }

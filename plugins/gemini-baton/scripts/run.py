@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import platform
 from pathlib import Path
@@ -13,6 +14,36 @@ import time
 import venv
 
 ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_ENV_KEYS = frozenset({
+    "GEMINI_BATON_ENV_FILE", "GEMINI_BATON_MODEL", "GEMINI_WEB_BRIDGE_PROXY",
+    "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY",
+    "http_proxy", "https_proxy", "all_proxy", "no_proxy",
+})
+
+
+def runtime_environment(env: dict[str, str]) -> dict[str, str]:
+    """Load user-local transport options without embedding them in the plugin."""
+    if env.get("GEMINI_BATON_STATE_DIR"):
+        state = Path(env["GEMINI_BATON_STATE_DIR"]).expanduser()
+    elif sys.platform == "darwin":
+        state = Path.home() / "Library/Application Support/gemini-baton"
+    elif os.name == "nt":
+        state = Path(env.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "gemini-baton"
+    else:
+        state = Path(env.get("XDG_STATE_HOME", str(Path.home() / ".local/state"))) / "gemini-baton"
+    path = state / "runtime-env.json"
+    try:
+        if path.is_symlink() or path.stat().st_size > 65536:
+            raise ValueError()
+        saved = json.loads(path.read_text(encoding="utf-8"))
+        if (not isinstance(saved, dict) or saved.keys() - RUNTIME_ENV_KEYS
+                or any(not isinstance(value, str) or "\x00" in value for value in saved.values())):
+            raise ValueError()
+    except FileNotFoundError:
+        return dict(env)
+    except (OSError, ValueError, UnicodeError):
+        raise RuntimeError("Invalid private Gemini runtime-env.json configuration.") from None
+    return {**env, **saved}
 
 
 def cache_root() -> Path:
@@ -47,6 +78,7 @@ def main() -> int:
     if sys.version_info < (3, 11):
         raise RuntimeError("Write to me requires Python 3.11 or newer.")
     os.umask(0o077)
+    os.environ.update(runtime_environment(dict(os.environ)))
     cache = cache_root()
     cache.mkdir(parents=True, exist_ok=True, mode=0o700)
     environment = cache / fingerprint()

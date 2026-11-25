@@ -40,25 +40,26 @@ def main() -> int:
     )]
     record("web_package_versions", len(set(versions)) == 1, ", ".join(versions))
 
-    for name in ("write-to-me", "workhorse"):
+    for name, plugin_name in (("write-to-me", "gemini-baton"), ("workhorse", "dsh-baton")):
         source = ROOT / "skills" / name
-        installed = HOME_DIR / ".codex/skills" / name
-        record(f"skill:{name}", installed.is_symlink() and installed.resolve() == source and (source / "SKILL.md").is_file(), str(source))
+        manifest = json.loads((ROOT / "plugins" / plugin_name / "plugin.json").read_text())
+        installed = HOME_DIR / ".codex/plugins/cache/shigo-plugins" / plugin_name / manifest["version"] / "skills" / name
+        duplicate = HOME_DIR / ".codex/skills" / name
+        record(f"skill:{name}", installed.is_dir() and (source / "SKILL.md").is_file() and not duplicate.is_symlink() and not duplicate.exists(), str(installed))
 
     config_path = HOME_DIR / ".codex/config.toml"
     with config_path.open("rb") as handle:
-        servers = tomllib.load(handle).get("mcp_servers", {})
-    expected = {
-        "gemini-baton": ("command", ROOT / "gemini-baton/.venv/bin/gemini-baton"),
-        "gemini-web-backup": ("args", web / "plugins/gemini-web-bridge/dist/mcp-server.mjs"),
-    }
-    for name, (key, path) in expected.items():
-        cfg = servers.get(name, {})
-        value = cfg.get(key)
-        matches = value == str(path) if key == "command" else isinstance(value, list) and str(path) in value
-        record(f"mcp:{name}", bool(matches and path.is_file() and cfg.get("enabled", True)), str(path))
-        if cfg.get("cwd"):
-            record(f"mcp_cwd:{name}", Path(cfg["cwd"]).is_dir(), str(cfg["cwd"]))
+        config = tomllib.load(handle)
+    legacy = config.get("mcp_servers", {})
+    record("plugin_mcp_ownership", not set(legacy).intersection({"gemini-baton", "gemini-web-backup", "dsh-baton", "image-analysis"}), "Target transports are owned by installed plugins")
+    listed = run("codex", "mcp", "list", "--json")
+    servers = {item["name"]: item for item in json.loads(listed.stdout)}
+    for name in ("gemini-baton", "dsh-baton", "image-analysis"):
+        server = servers.get(name, {})
+        transport = server.get("transport", {})
+        cache = HOME_DIR / ".codex/plugins/cache/shigo-plugins" / name
+        owned = str(cache) in (transport.get("cwd") or "") if name != "image-analysis" else transport.get("url") == "http://127.0.0.1:3001/mcp"
+        record(f"mcp:{name}", bool(owned and server.get("enabled") and config.get("plugins", {}).get(f"{name}@shigo-plugins", {}).get("enabled")), "Enabled marketplace MCP registration")
 
     api = ROOT / "gemini-baton"
     python = api / ".venv/bin/python"

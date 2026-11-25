@@ -18,7 +18,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ReleaseTests(unittest.TestCase):
     def test_relocated_release(self) -> None:
-        archive = ROOT / "dist/gemini-baton-0.1.0.zip"
+        version = json.loads((ROOT / "plugins/gemini-baton/plugin.json").read_text())["version"]
+        archive = ROOT / f"dist/gemini-baton-{version}.zip"
         with tempfile.TemporaryDirectory(prefix="write-to-me-release-") as temp:
             base = Path(temp)
             with zipfile.ZipFile(archive) as bundle:

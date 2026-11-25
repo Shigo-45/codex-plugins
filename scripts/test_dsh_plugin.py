@@ -276,6 +276,28 @@ class ManifestTests(unittest.TestCase):
 
 
 class SourceClosureTests(unittest.TestCase):
+    def test_marketplace_registration_survives_harness_auto_registration(self) -> None:
+        script = """
+import assert from 'node:assert/strict'
+import { editCodexConfig } from './src/register.mjs'
+const entry = { command: 'node', args: ['server.mjs'] }
+const legacy = '[mcp_servers.dsh-baton]\\ncommand = "node"\\nargs = ["old.mjs"]\\n'
+const other = '[mcp_servers.other]\\ncommand = "other"\\n'
+for (const quote of ['"', "'"]) {
+  const plugin = `[plugins.${quote}dsh-baton@shigo-plugins${quote}]\\nenabled = true\\n`
+  assert.equal(editCodexConfig(plugin + other, entry), plugin + other)
+  assert.equal(editCodexConfig(legacy + plugin + other, entry), plugin + other)
+}
+for (const config of ['', '[plugins."dsh-baton@shigo-plugins"]\\nenabled = false\\n']) {
+  assert.match(editCodexConfig(config + other, entry), /\\[mcp_servers\\.dsh-baton\\]/)
+}
+"""
+        result = subprocess.run(
+            [node_binary(), "--input-type=module", "-e", script],
+            cwd=APP, capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_runtime_import_closure(self) -> None:
         missing = []
         bare = []

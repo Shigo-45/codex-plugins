@@ -32,6 +32,11 @@ def validate() -> list[Path]:
         if onboarding:
             assert (plugin / onboarding).is_file()
         assert list((plugin / "skills").glob("*/SKILL.md"))
+        if plugin.name == "image-analysis":
+            jars = list((plugin / "runtime").glob("ImageAnalysisMCP-*.jar"))
+            assert len(jars) == 1
+            with zipfile.ZipFile(jars[0]) as jar:
+                assert b"copilotj.McpOnlyService" in jar.read("META-INF/json/org.scijava.plugin.Plugin"), "Fiji MCP service index is missing"
         for path in plugin.rglob("*"):
             assert not path.is_symlink(), path
             assert not FORBIDDEN.intersection(path.relative_to(plugin).parts), path

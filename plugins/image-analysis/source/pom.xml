@@ -282,6 +282,11 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <annotationProcessors>
+            <annotationProcessor>org.scijava.annotations.AnnotationProcessor</annotationProcessor>
+          </annotationProcessors>
+        </configuration>
         <executions>
           <execution>
             <id>default-compile</id>
