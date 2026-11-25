@@ -1,0 +1,29 @@
+{
+  "upstream": "https://github.com/JialaoLiu/dsh-baton",
+  "package": "dsh-baton-mcp",
+  "version": "0.6.1",
+  "license": "MIT",
+  "copyright": "Copyright (c) 2026 JialaoLiu",
+  "vendored_prefix": "app",
+  "sha256": {
+    "app/LICENSE": "b861687b5c8ef53df7baf911cab582831f271d9057996e7f853a6920864d22ce",
+    "app/host/LICENSE": "b861687b5c8ef53df7baf911cab582831f271d9057996e7f853a6920864d22ce",
+    "app/host/cordis.patch.yml": "b34a9aa00d9c8edbc4ff06fb931d14dc7068761790b4c7a42e7e8eaeb495fc51",
+    "app/host/lib/client.js": "e4c78447f994c6ccb64a153bd88dea889a4a9664fcfff03e51b00810f4e0ea54",
+    "app/host/lib/index.js": "c1d99004efd366a7f6e39880d3f80b54ef780cd0e08ae369367bf94ccb03d8ac",
+    "app/host/lib/socket.js": "8f76cd9df4d4f0813703d86edafde726fde166256131870dbb950eab7ae2259b",
+    "app/host/package.json": "d5f6d421db9e87a4095be05f7573e71be82e00c1d94bdb07574075433752a0b0",
+    "app/package.json": "c27e2ca2a35fd5907343621f50e1ca7b78292ef805e6a92280b32248cf5e5882",
+    "app/patches/account.patch.yml": "d27193195127733bfb9b51cbb56d4a62de81b379ad2d8450bdb67b883ef2bbf0",
+    "app/src/bin.mjs": "50a601623ae0dff3874407b7f8f41d6c8311333564142b5d97fa3ab94e2fb580",
+    "app/src/cli.mjs": "80954bee9fd8400d38459fad250c1af88c0f3e2bc6abb56a7ab0cb817f2c0c16",
+    "app/src/codex-hook.mjs": "3ff4d3b545a050bb6a4cd2eea191525227fdc2f6a460f1e398acb446864bc174",
+    "app/src/core.mjs": "5820b98c5c8f33061712c5a4be3e05ba6af8a3b42c8fe14dc5a3585f03dcc143",
+    "app/src/evidence.mjs": "93ccc4e3b06c82f3477ba972b52ccba1f4044df0c49f1ccc41b4a1111f37fead",
+    "app/src/folder.mjs": "554a3299fa012278d17e3e3ee2b8f00156ccaff1d24b73b982a31abe62848841",
+    "app/src/mcp.mjs": "a0fa5759e515522ac096ad4b52fbf74a7bc97349cc0065650160c34c071e10e0",
+    "app/src/register.mjs": "c1c13609b304fc65c16135a044b6f2a733e9d3a3b1a73fc1593c69d4eecbdad3",
+    "app/src/server.mjs": "76dc49354e99e398b55c92943af2381248437e6cbca3c2d463701c9df4abfea5",
+    "app/src/setup.mjs": "7c18628fedbc8e64db41e9cebe91e716e95a76d27c62f43c910bb09ab8cdbf0d"
+  }
+}

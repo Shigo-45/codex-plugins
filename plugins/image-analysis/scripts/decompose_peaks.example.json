@@ -1,0 +1,72 @@
+{
+  "curves_path": "/absolute/path/to/curves.json",
+  "output_dir": "/absolute/path/to/new_peak_decomposition",
+  "fit_range": [
+    0,
+    21
+  ],
+  "components": [
+    {
+      "name": "peak_A",
+      "reference": "reference_1",
+      "support": [
+        0,
+        21
+      ],
+      "center": 10,
+      "shifts": [
+        -4,
+        -3,
+        -2
+      ],
+      "negative_reference_policy": "clip"
+    },
+    {
+      "name": "peak_B",
+      "reference": "reference_1",
+      "support": [
+        0,
+        21
+      ],
+      "center": 10,
+      "shifts": [
+        2,
+        3,
+        4
+      ],
+      "negative_reference_policy": "clip"
+    }
+  ],
+  "models": [
+    {
+      "name": "fixed_width",
+      "width_sets": [
+        {
+          "peak_A": 1.0,
+          "peak_B": 1.0
+        }
+      ]
+    },
+    {
+      "name": "shared_width",
+      "width_sets": [
+        {
+          "peak_A": 0.9,
+          "peak_B": 0.9
+        },
+        {
+          "peak_A": 1.0,
+          "peak_B": 1.0
+        },
+        {
+          "peak_A": 1.1,
+          "peak_B": 1.1
+        }
+      ]
+    }
+  ],
+  "primary": {
+    "dataset": "sample_1",
+    "model": "shared_width"
+  }
+}

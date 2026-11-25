@@ -1,0 +1,36 @@
+.DS_Store
+**/.DS_Store
+
+# Independent upstream checkout; its own Git repository owns all changes.
+/gemini-web-bridge/
+/copilotj-fiji/
+
+# Local dependencies, generated caches, and credentials.
+**/.venv/
+**/node_modules/
+**/target/
+**/.uv-cache/
+**/__pycache__/
+**/.pytest_cache/
+*.py[cod]
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+**/.coverage
+**/htmlcov/
+**/coverage/
+**/test-results/
+/backups/
+/dist/
+/.playwright-cli/
+**/.gemini-baton-state/
+**/local-state/
+**/runtime-state/
+**/Chrome Profile/
+**/DevToolsActivePort

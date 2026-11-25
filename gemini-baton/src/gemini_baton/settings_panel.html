@@ -1,0 +1,410 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{CSRF_TOKEN}}">
+<title>Gemini Baton Settings</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f7f7f5;
+    --panel: #ffffff;
+    --text: #1f2328;
+    --muted: #5b6370;
+    --line: #d8dce2;
+    --accent: #1f6f5c;
+    --accent-strong: #155446;
+    --danger: #a4372a;
+    --ok: #1f6f5c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #15181c;
+      --panel: #1d2126;
+      --text: #e8ebef;
+      --muted: #a8b0ba;
+      --line: #343b44;
+      --accent: #61c2a5;
+      --accent-strong: #7dd8ba;
+      --danger: #ef8f82;
+      --ok: #7dd8ba;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.55 ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  main { max-width: 780px; margin: 0 auto; padding: 36px 20px 64px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 1.6rem; line-height: 1.2; margin: 0 0 8px; }
+  h2 { font-size: 1.08rem; margin: 0 0 6px; }
+  h3 { font-size: 0.98rem; margin: 20px 0 6px; }
+  p { margin: 0 0 12px; }
+  .muted { color: var(--muted); }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 18px;
+    margin: 0 0 16px;
+  }
+  .notice {
+    display: none;
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 0 0 16px;
+    background: var(--panel);
+    white-space: pre-wrap;
+  }
+  .notice.show { display: block; }
+  .notice.error { border-left-color: var(--danger); }
+  .notice.ok { border-left-color: var(--ok); }
+  ul.routes { list-style: none; margin: 12px 0; padding: 0; border-top: 1px solid var(--line); }
+  ul.routes li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  ul.routes li.disabled .route-label { color: var(--muted); }
+  .route-label { flex: 1; min-width: 0; }
+  .route-label strong { display: block; font-weight: 600; }
+  .route-label span { display: block; font-size: 0.86rem; color: var(--muted); }
+  .move { display: flex; gap: 4px; }
+  button {
+    font: inherit;
+    color: var(--text);
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #ffffff; }
+  button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+  label.field { display: block; margin: 10px 0; }
+  label.field span { display: block; margin-bottom: 4px; }
+  input[type="password"] {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 8px 10px;
+  }
+  .check { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+  code {
+    font: 0.92em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 5px;
+    padding: 2px 6px;
+    overflow-wrap: anywhere;
+  }
+  .login-row { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+  footer { color: var(--muted); font-size: 0.86rem; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gemini Baton Settings</h1>
+    <p class="muted">Configure writing fallback routes and optional sign-in. This page is served only on 127.0.0.1 for the current session and expires after inactivity. Settings are stored outside the repository.</p>
+  </header>
+
+  <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+  <section class="panel">
+    <h2>Writing routes</h2>
+    <p class="muted">Enabled routes run from top to bottom. Disabled routes stay available to re-enable. At least one route must stay enabled.</p>
+    <ul id="routes" class="routes" aria-label="Writing routes"></ul>
+    <div class="actions">
+      <button id="save-routes" class="primary" type="button">Save Routes</button>
+      <span id="route-count" class="muted"></span>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>API key</h2>
+    <p id="key-status" class="muted"></p>
+    <p class="muted">GEMINI_API_KEY, GOOGLE_API_KEY, or GEMINI_BATON_ENV_FILE take precedence over a key saved here. A saved API key is stored in this machine's private external state and is never shown again.</p>
+    <label class="field"><span>New API key</span>
+      <input id="api-key" type="password" autocomplete="new-password" spellcheck="false">
+    </label>
+    <label class="check"><input id="clear-key" type="checkbox"> Clear Saved API Key</label>
+    <div class="actions">
+      <button id="save-key" class="primary" type="button">Save API Key</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Account sign-in</h2>
+    <p class="muted">The sign-in buttons open the Gemini Web bridge login window. Complete sign-in there and close the window.</p>
+    <div class="login-row">
+      <button type="button" data-provider="gemini">Sign in to Gemini Web</button>
+      <button type="button" data-provider="aistudio">Sign in to AI Studio</button>
+    </div>
+    <p id="login-status" class="muted"></p>
+    <h3>Antigravity CLI</h3>
+    <div id="antigravity"></div>
+  </section>
+
+  <footer>
+    <p>This settings page does not send the saved API key to Google. Writing jobs send only their selected task material to Google.</p>
+  </footer>
+</main>
+<script>
+(() => {
+  "use strict";
+  const csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  const csrf = csrfMeta ? csrfMeta.getAttribute("content") : "";
+  const state = {
+    allRoutes: [],
+    order: [],
+    enabled: new Set(),
+  };
+  const notice = document.getElementById("notice");
+  const routeList = document.getElementById("routes");
+  const routeCount = document.getElementById("route-count");
+  const keyStatus = document.getElementById("key-status");
+  const keyInput = document.getElementById("api-key");
+  const clearKey = document.getElementById("clear-key");
+  const loginStatus = document.getElementById("login-status");
+  const antigravity = document.getElementById("antigravity");
+
+  function showNotice(message, kind) {
+    notice.textContent = message;
+    notice.className = "notice show" + (kind ? " " + kind : "");
+  }
+
+  function clearNotice() {
+    notice.textContent = "";
+    notice.className = "notice";
+  }
+
+  function routeMeta(name) {
+    return state.allRoutes.find((item) => item.name === name) || {
+      name,
+      channel_label: "",
+      model: name,
+      effort: "",
+    };
+  }
+
+  function enabledOrder() {
+    return state.order.filter((name) => state.enabled.has(name));
+  }
+
+  function renderRoutes() {
+    routeList.replaceChildren();
+    for (const name of state.order) {
+      const meta = routeMeta(name);
+      const enabled = state.enabled.has(name);
+      const row = document.createElement("li");
+      if (!enabled) row.className = "disabled";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = enabled;
+      checkbox.setAttribute("aria-label", "Enable " + name);
+      checkbox.addEventListener("change", () => {
+        if (checkbox.checked) state.enabled.add(name);
+        else state.enabled.delete(name);
+        renderRoutes();
+      });
+
+      const label = document.createElement("div");
+      label.className = "route-label";
+      const strong = document.createElement("strong");
+      strong.textContent = meta.model + " — " + meta.channel_label;
+      const detail = document.createElement("span");
+      detail.textContent = name + (meta.effort ? " · " + meta.effort : "");
+      label.append(strong, detail);
+
+      const move = document.createElement("div");
+      move.className = "move";
+      const up = document.createElement("button");
+      up.type = "button";
+      up.textContent = "Up";
+      up.disabled = state.order.indexOf(name) === 0;
+      up.setAttribute("aria-label", "Move " + name + " up");
+      up.addEventListener("click", () => moveRoute(name, -1));
+      const down = document.createElement("button");
+      down.type = "button";
+      down.textContent = "Down";
+      down.disabled = state.order.indexOf(name) === state.order.length - 1;
+      down.setAttribute("aria-label", "Move " + name + " down");
+      down.addEventListener("click", () => moveRoute(name, 1));
+      move.append(up, down);
+
+      row.append(checkbox, label, move);
+      routeList.append(row);
+    }
+    routeCount.textContent = enabledOrder().length + " of " + state.order.length + " enabled";
+  }
+
+  function moveRoute(name, delta) {
+    const index = state.order.indexOf(name);
+    const target = index + delta;
+    if (index < 0 || target < 0 || target >= state.order.length) return;
+    const next = state.order.slice();
+    [next[index], next[target]] = [next[target], next[index]];
+    state.order = next;
+    renderRoutes();
+  }
+
+  function renderStatus(data) {
+    if (data.settings_error) {
+      showNotice("Settings need attention: " + data.settings_error.message, "error");
+    }
+    const apiKey = data.api_key || {};
+    if (apiKey.configured) {
+      keyStatus.textContent = "Configured: " + (apiKey.source || "available") +
+        (apiKey.saved ? " (saved in private settings)" : "");
+    } else {
+      keyStatus.textContent = "No API key is configured for the API routes.";
+    }
+    antigravity.replaceChildren();
+    const login = data.antigravity || {};
+    if (login.available) {
+      const intro = document.createElement("p");
+      intro.className = "muted";
+      intro.textContent = login.instructions || "";
+      const command = document.createElement("code");
+      command.textContent = login.command || "";
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy command";
+      copy.addEventListener("click", async () => {
+        try {
+          await navigator.clipboard.writeText(login.command || "");
+          showNotice("Command copied.", "ok");
+        } catch (_error) {
+          showNotice("Copy failed; select the command manually.", "error");
+        }
+      });
+      const row = document.createElement("div");
+      row.className = "actions";
+      row.append(command, copy);
+      antigravity.append(intro, row);
+    } else {
+      const message = document.createElement("p");
+      message.className = "muted";
+      message.textContent = "The Antigravity CLI was not found on PATH. Install it, then reopen this panel.";
+      antigravity.append(message);
+    }
+  }
+
+  async function load() {
+    const response = await fetch("/api/settings", {
+      credentials: "same-origin",
+      headers: { "Accept": "application/json" },
+    });
+    if (response.status === 401) {
+      showNotice("This settings session has ended. Run gemini_settings again.", "error");
+      return;
+    }
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || !data.ok) {
+      showNotice("Settings could not be loaded.", "error");
+      return;
+    }
+    state.allRoutes = data.all_routes || [];
+    state.order = data.route_order || [];
+    state.enabled = new Set(data.routes || []);
+    renderRoutes();
+    renderStatus(data);
+  }
+
+  async function post(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrf,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || !data.ok) {
+      const message = data && data.error && data.error.message
+        ? data.error.message
+        : "The request failed.";
+      throw new Error(message);
+    }
+    return data;
+  }
+
+  document.getElementById("save-routes").addEventListener("click", async () => {
+    clearNotice();
+    try {
+      const routes = enabledOrder();
+      if (!routes.length) throw new Error("Enable at least one writing route.");
+      await post("/api/settings", { routes });
+      showNotice("Route order saved.", "ok");
+      await load();
+    } catch (error) {
+      showNotice(error.message, "error");
+    }
+  });
+
+  document.getElementById("save-key").addEventListener("click", async () => {
+    clearNotice();
+    try {
+      const routes = enabledOrder();
+      if (!routes.length) throw new Error("Enable at least one writing route.");
+      if (clearKey.checked) {
+        await post("/api/settings", { routes, clear_api_key: true });
+        clearKey.checked = false;
+        showNotice("Saved API key removed.", "ok");
+      } else {
+        const value = keyInput.value.trim();
+        if (!value) throw new Error("Enter a new API key or choose removal.");
+        await post("/api/settings", { routes, api_key: value });
+        keyInput.value = "";
+        clearKey.checked = false;
+        showNotice("API key saved privately.", "ok");
+      }
+      await load();
+    } catch (error) {
+      showNotice(error.message, "error");
+    }
+  });
+
+  for (const button of document.querySelectorAll("[data-provider]")) {
+    button.addEventListener("click", async () => {
+      clearNotice();
+      loginStatus.textContent = "";
+      try {
+        const data = await post("/api/login", { provider: button.dataset.provider });
+        const status = data.login && data.login.status;
+        if (status === "launched") {
+          loginStatus.textContent = "Login window opened. Complete sign-in in the browser, then close the window.";
+        } else if (status === "completed") {
+          loginStatus.textContent = "The login command reported completion.";
+        } else {
+          loginStatus.textContent = "Login request accepted.";
+        }
+      } catch (error) {
+        loginStatus.textContent = error.message;
+      }
+    });
+  }
+
+  load().catch(() => showNotice("Settings could not be loaded.", "error"));
+})();
+</script>
+</body>
+</html>

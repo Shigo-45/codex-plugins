@@ -1,0 +1,50 @@
+{
+  "input_path": "/absolute/path/to/raw_gel.tif",
+  "signal_polarity": "high",
+  "display_range": [
+    5000,
+    20000
+  ],
+  "background_y": {
+    "top": [
+      450,
+      500
+    ],
+    "bottom": [
+      780,
+      820
+    ]
+  },
+  "lanes": [
+    {
+      "name": "substrate_reference",
+      "x": [
+        350,
+        450
+      ],
+      "peak_y": [
+        580,
+        770
+      ]
+    },
+    {
+      "name": "reaction",
+      "x": [
+        200,
+        300
+      ],
+      "peak_y": [
+        530,
+        770
+      ]
+    }
+  ],
+  "relative_to_lane": "substrate_reference",
+  "output_dir": "/absolute/path/to/new_gel_quantification",
+  "background_shifts_px": [
+    -10,
+    0,
+    10
+  ],
+  "primary_background_shift_px": 0
+}

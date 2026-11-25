@@ -1,0 +1,51 @@
+{
+  "input_path": "/absolute/path/to/raw_gel.tif",
+  "output_dir": "/absolute/path/to/new_image_outputs",
+  "operations": [
+    {
+      "op": "rotate",
+      "angle_degrees": 90
+    },
+    {
+      "op": "flip",
+      "axis": "horizontal"
+    },
+    {
+      "op": "crop",
+      "xywh": [
+        100,
+        100,
+        600,
+        600
+      ]
+    },
+    {
+      "op": "resize",
+      "factor": 0.5,
+      "interpolation": "bilinear"
+    },
+    {
+      "op": "set_calibration",
+      "pixel_width": 0.2,
+      "pixel_height": 0.2,
+      "unit": "um"
+    }
+  ],
+  "exports": [
+    {
+      "filename": "adjusted.tif",
+      "format": "tiff",
+      "mode": "native"
+    },
+    {
+      "filename": "preview.png",
+      "format": "png",
+      "mode": "display",
+      "display_range": [
+        5000,
+        20000
+      ],
+      "dark_signal": true
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+interface:
+  display_name: "Write to me"
+  short_description: "Delegate writing and style matching from samples to Gemini"
+  default_prompt: "Use $write-to-me to select relevant writing samples and delegate human-facing writing to Gemini, which reads the samples and applies their style; Codex handles source checks, agent materials, review, formatting, and file saving."
+
+policy:
+  allow_implicit_invocation: true

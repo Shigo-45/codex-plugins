@@ -1,0 +1,12 @@
+{
+  "title": "Write to me本地设置",
+  "save": "保存设置",
+  "login_aistudio": "专用浏览器登录AI Studio",
+  "login_web": "专用浏览器登录Gemini Web",
+  "api_key": "Gemini API Key（可选）",
+  "routes": "回退链路线配置（默认CLI→API→AI Studio→Web）",
+  "move_up": "上移",
+  "move_down": "下移",
+  "enabled": "启用此路线",
+  "transfer_notice": "任务必要的所选文件（最多10个，每个上限100MB）和提示词将发送至Google；执行结果未知时优先恢复原任务以防止重复提交。"
+}

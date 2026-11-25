@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "image-analysis": {
+      "url": "http://127.0.0.1:3001/mcp",
+      "startup_timeout_sec": 30,
+      "tool_timeout_sec": 360
+    }
+  }
+}

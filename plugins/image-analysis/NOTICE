@@ -1,0 +1,17 @@
+2. Image Analysis (`plugins/image-analysis`)
+-------------------------------------------------------------------------------
+- Upstream Project: neurogeom/copilotj (CopilotJ)
+  https://github.com/neurogeom/copilotj
+- License: Apache License, Version 2.0
+- Local Adaptations:
+  - Adapted for standalone MCP-only lifecycle operation (`http://127.0.0.1:3001/mcp`)
+    and Jython script development/validation workflows.
+  - Added dedicated Fiji instance ownership tracking via process PID and JVM
+    token so shutdown routines only terminate Fiji processes started by the
+    plugin after export completion.
+  - Packaged with both prebuilt runtime JARs (two JARs) and the corresponding
+    Java source code and Maven `pom.xml` under `plugins/image-analysis/source`,
+    plus dual Codex plugin manifests (`.codex-plugin/plugin.json`, `plugin.json`,
+    and `mcp.json`).
+
+-------------------------------------------------------------------------------

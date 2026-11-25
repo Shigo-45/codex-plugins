@@ -1,0 +1,6 @@
+*.jar binary
+*.py text eol=lf
+*.mjs text eol=lf
+*.md text eol=lf
+plugins/image-analysis/source/** -whitespace
+vendor/gemini-web/** -whitespace

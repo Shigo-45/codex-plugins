@@ -1,0 +1,4 @@
+interface:
+  display_name: "Workhorse"
+  short_description: "Offload larger work packages to DeepSeek."
+  default_prompt: "Use $workhorse to delegate complete work packages in parallel and verify the returned results."

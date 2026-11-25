@@ -1,0 +1,36 @@
+{
+  "input_path": "/absolute/path/to/raw_gel.tif",
+  "output_dir": "/absolute/path/to/new_analysis_directory",
+  "signal_polarity": "high",
+  "flip_horizontal": true,
+  "crop_original_xywh": [100, 200, 600, 650],
+  "display_range": [5000, 20000],
+  "background_y": {"top": [450, 500], "bottom": [780, 820]},
+  "lanes": [
+    {"name": "substrate_reference", "x": [350, 450], "peak_y": [580, 770]},
+    {"name": "reaction", "x": [200, 300], "peak_y": [530, 770]}
+  ],
+  "relative_to_lane": "substrate_reference",
+  "excluded_regions": [
+    {"name": "diffuse_excluded", "original_xywh": [500, 220, 150, 150]}
+  ],
+  "conversion": {
+    "confirmed_assumptions": {
+      "pure_substrate_reference": false,
+      "equal_signal_per_molecule": false
+    },
+    "fit_y": [520, 780],
+    "reference_support_y": [570, 780],
+    "reference_center_y": 650.0,
+    "product_shifts_px": [-40, -35, -30, -25, -20],
+    "substrate_shifts_px": [-5, 0, 5],
+    "width_scales": [0.8, 1.0, 1.2, 1.4],
+    "background_shifts_px": [-10, 0, 10],
+    "models": ["same_shape", "shared_width", "product_width_variable"],
+    "variants": [
+      {"name": "full", "reference_x": [350, 450], "mixture_x": [200, 300]},
+      {"name": "core", "reference_x": [360, 440], "mixture_x": [210, 290]}
+    ],
+    "primary": {"variant": "core", "model": "shared_width", "background_shift_px": 0}
+  }
+}

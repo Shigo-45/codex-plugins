@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "gemini-baton": {
+      "command": "python3",
+      "args": [
+        "${PLUGIN_ROOT}/scripts/run.py",
+        "mcp"
+      ],
+      "cwd": "${PLUGIN_ROOT}",
+      "startup_timeout_sec": 300,
+      "tool_timeout_sec": 900,
+      "type": "stdio"
+    }
+  }
+}

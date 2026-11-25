@@ -1,0 +1,324 @@
+/**
+ * SPDX-FileCopyrightText: Copyright contributors to the CopilotJ project.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+package copilotj;
+
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLClassLoader;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.function.BooleanSupplier;
+
+import javax.swing.JPanel;
+
+import org.scijava.log.LogService;
+
+/**
+ * Loads the MCP server bundle reflectively from an isolated child-first
+ * ClassLoader, so the Java 8 core can run on legacy Fiji while MCP is enabled on
+ * Java 17+ Fiji.
+ *
+ * <p>The bundle ships as a non-classpath resource {@code lib/mcp-bundle.jar}
+ * inside the core JAR. At runtime it is released to a cache file under
+ * {@code $COPILOTJ_HOME} and loaded via a child-first {@link URLClassLoader}
+ * whose parent is the core classloader. MCP classes (and their Jetty 12 /
+ * Jackson 2.18 dependencies) stay isolated from Fiji's shared classpath; only
+ * shared types ({@link EventHandler}, JDK, SciJava) are resolved by the parent.
+ * On a JVM older than 17 the bundle's classes fail bytecode verification and we
+ * degrade gracefully.
+ *
+ * <p>The underlying ClassLoader is cached statically so MCP's own static state
+ * (e.g. {@code McpModule}'s server handle) stays consistent across UI reopens.
+ */
+public final class McpLoader {
+
+  private static final String BUNDLE_RESOURCE = "/lib/mcp-bundle.jar";
+  private static final String PANEL_CLASS = "copilotj.mcp.McpPanel";
+  private static final String MODULE_CLASS = "copilotj.mcp.McpModule";
+
+  private static volatile ClassLoader bundleLoader;
+  private static volatile boolean unavailable;
+  // Why the bundle is unavailable, so callers can show a truthful message instead
+  // of guessing from a null panel. Set together with `unavailable` in ensureLoaded().
+  private static volatile PanelResult.Status unavailableStatus;
+
+  private final LogService log;
+
+  public McpLoader(final LogService log) {
+    this.log = log;
+  }
+
+  /**
+   * Typed outcome of {@link #createPanel}, so callers can show a truthful message
+   * for each failure mode instead of guessing from a {@code null} panel. The four
+   * statuses map one-to-one onto the dialog's fallback labels.
+   */
+  public static final class PanelResult {
+    public enum Status {
+      /** Panel constructed successfully; {@link #panel()} is non-null. */
+      OK,
+      /** JVM is older than Java 17 — the bundle's bytecode fails verification. */
+      UNAVAILABLE_JAVA_TOO_OLD,
+      /** Bundle resource is missing, unreadable, or otherwise failed to load. */
+      UNAVAILABLE_BUNDLE,
+      /** Bundle loaded, but {@code McpPanel}'s constructor threw; see {@link #cause()}. */
+      CONSTRUCTION_FAILED
+    }
+
+    private final Status status;
+    private final JPanel panel;
+    private final Throwable cause;
+
+    private PanelResult(final Status status, final JPanel panel, final Throwable cause) {
+      this.status = status;
+      this.panel = panel;
+      this.cause = cause;
+    }
+
+    static PanelResult ok(final JPanel panel) { return new PanelResult(Status.OK, panel, null); }
+
+    static PanelResult unavailable(final Status status) { return new PanelResult(status, null, null); }
+
+    static PanelResult failed(final Throwable cause) {
+      return new PanelResult(Status.CONSTRUCTION_FAILED, null, cause);
+    }
+
+    public Status status() { return status; }
+
+    /** Non-null iff {@link #status()} is {@link Status#OK}. */
+    public JPanel panel() { return panel; }
+
+    /** Non-null iff {@link #status()} is {@link Status#CONSTRUCTION_FAILED}. */
+    public Throwable cause() { return cause; }
+  }
+
+  /**
+   * Reflectively creates the MCP control panel, returning a {@link PanelResult}
+   * that distinguishes a ready panel from each failure mode (Java too old, bundle
+   * missing/corrupt, or construction threw) so the caller can show a truthful
+   * message instead of a catch-all label.
+   *
+   * @param handler forwarded into the bundle as the shared event channel
+   * @param requireExclusiveControl invoked by the panel right before starting
+   *        the MCP server; returns {@code true} to proceed. The core dialog
+   *        supplies this so it can detect/stop a running managed or standalone
+   *        server (and prompt the user) without the bundle depending on
+   *        {@link CopilotJBridgeService}.
+   * @param statusUpdater invoked by the panel on MCP status changes (text +
+   *        color); the core dialog routes it to the shared status bar, merging
+   *        MCP state into the single endpoint-status display.
+   */
+  public PanelResult createPanel(final EventHandler handler, final BooleanSupplier requireExclusiveControl,
+      final java.util.function.BiConsumer<String, java.awt.Color> statusUpdater) {
+    ensureLoaded();
+    if (bundleLoader == null) {
+      // ensureLoaded() set `unavailable` together with unavailableStatus; fall back
+      // defensively to BUNDLE in case of a null race.
+      final PanelResult.Status status = unavailableStatus != null
+          ? unavailableStatus : PanelResult.Status.UNAVAILABLE_BUNDLE;
+      return PanelResult.unavailable(status);
+    }
+    try {
+      final Class<?> cls = Class.forName(PANEL_CLASS, true, bundleLoader);
+      final java.lang.reflect.Constructor<?> ctor =
+          cls.getConstructor(EventHandler.class, LogService.class, BooleanSupplier.class,
+              java.util.function.BiConsumer.class);
+      return PanelResult.ok((JPanel) ctor.newInstance(handler, log, requireExclusiveControl, statusUpdater));
+    } catch (final Throwable t) {
+      log.warn("copilotj: Failed to create MCP panel: " + t.getMessage(), t);
+      return PanelResult.failed(unwrap(t));
+    }
+  }
+
+  /**
+   * Starts the embedded MCP server without creating the optional configuration
+   * panel. This is the entry point used by the MCP-only service.
+   */
+  public void startMcp(final EventHandler handler, final String host, final int port) throws Exception {
+    ensureLoaded();
+    if (bundleLoader == null) {
+      throw new IllegalStateException("MCP bundle is unavailable on this JVM");
+    }
+    final Class<?> cls = Class.forName(MODULE_CLASS, true, bundleLoader);
+    cls.getMethod("start", EventHandler.class, String.class, int.class)
+        .invoke(null, handler, host, port);
+  }
+
+  /** Stops the embedded MCP server when it is running. */
+  public void stopMcp() {
+    if (bundleLoader == null) return;
+    try {
+      final Class<?> cls = Class.forName(MODULE_CLASS, true, bundleLoader);
+      cls.getMethod("stop").invoke(null);
+    } catch (final Throwable t) {
+      log.warn("copilotj: Failed to stop MCP server: " + t.getMessage(), t);
+    }
+  }
+
+  /** Returns whether the embedded MCP server is currently running. */
+  public boolean isMcpRunning() {
+    if (bundleLoader == null) return false;
+    try {
+      final Class<?> cls = Class.forName(MODULE_CLASS, true, bundleLoader);
+      return (Boolean) cls.getMethod("isRunning").invoke(null);
+    } catch (final Throwable t) {
+      return false;
+    }
+  }
+
+  /** Peels {@link java.lang.reflect.InvocationTargetException} to the real cause. */
+  private static Throwable unwrap(final Throwable t) {
+    Throwable c = t;
+    for (int i = 0; i < 8 && c != null; i++) {
+      if (c instanceof java.lang.reflect.InvocationTargetException && c.getCause() != null) {
+        c = c.getCause();
+      } else {
+        return c;
+      }
+    }
+    return t;
+  }
+
+  private void ensureLoaded() {
+    if (bundleLoader != null || unavailable) return;
+    synchronized (McpLoader.class) {
+      if (bundleLoader != null || unavailable) return;
+      try {
+        final Path bundle = releaseBundle();
+        final ClassLoader loader = new ChildFirstLoader(
+            new URL[]{bundle.toUri().toURL()},
+            McpLoader.class.getClassLoader());
+        // Probe by loading the entry module class — this triggers bytecode
+        // verification, which throws UnsupportedClassVersionError on Java <17.
+        Class.forName(MODULE_CLASS, true, loader);
+        bundleLoader = loader;
+      } catch (final Throwable t) {
+        unavailable = true;
+        // UnsupportedClassVersionError (Java <17 bytecode) vs an IO/load failure
+        // (bundle missing/corrupt) need different user-facing messages.
+        unavailableStatus = isJavaTooOld(t)
+            ? PanelResult.Status.UNAVAILABLE_JAVA_TOO_OLD
+            : PanelResult.Status.UNAVAILABLE_BUNDLE;
+        log.info("copilotj: MCP unavailable on Java " + System.getProperty("java.version")
+            + " (" + t.getClass().getSimpleName() + ": " + t.getMessage() + ")");
+      }
+    }
+  }
+
+  /** True if {@code t} (or its cause chain) is a bytecode-version mismatch — i.e. JVM < 17. */
+  private static boolean isJavaTooOld(Throwable t) {
+    Throwable c = t;
+    for (int i = 0; i < 8 && c != null; i++) {
+      if (c instanceof UnsupportedClassVersionError) return true;
+      c = c.getCause();
+    }
+    return false;
+  }
+
+  /**
+   * Releases the embedded bundle to a cache file under {@code $COPILOTJ_HOME},
+   * skipping the copy when the cached file already matches the current plugin
+   * JAR fingerprint. Single opaque file copy — never unpacks jar entries, so
+   * there is no zip-slip attack surface.
+   */
+  private Path releaseBundle() throws IOException {
+    final File dir = new File(envRoot(), "mcp");
+    if (!dir.isDirectory() && !dir.mkdirs()) {
+      throw new IOException("Could not create MCP cache dir: " + dir);
+    }
+    final Path target = new File(dir, "mcp-bundle.jar").toPath();
+    final Path marker = new File(dir, ".version").toPath();
+    final String fingerprint = jarFingerprint();
+    final String cached = readText(marker);
+    if (target.toFile().isFile() && fingerprint.equals(cached)) {
+      return target; // cache hit
+    }
+    try (InputStream in = McpLoader.class.getResourceAsStream(BUNDLE_RESOURCE)) {
+      if (in == null) {
+        throw new IOException("MCP bundle resource not found: " + BUNDLE_RESOURCE);
+      }
+      Files.copy(in, target, StandardCopyOption.REPLACE_EXISTING);
+    }
+    Files.write(marker, fingerprint.getBytes("UTF-8"));
+    return target;
+  }
+
+  /** Resolves {@code $COPILOTJ_HOME} (mirrors DefaultCopilotJBridgeService#resolveEnvRoot). */
+  private static File envRoot() {
+    final String os = System.getProperty("os.name").toLowerCase();
+    if (os.contains("win")) {
+      final String local = System.getenv("LOCALAPPDATA");
+      if (local != null && !local.isEmpty()) return new File(local, "copilotj");
+      return new File(System.getProperty("user.home"), "AppData\\Local\\copilotj");
+    }
+    String xdg = System.getenv("XDG_STATE_HOME");
+    if (xdg == null || xdg.isEmpty()) {
+      xdg = System.getProperty("user.home") + "/.local/state";
+    }
+    return new File(xdg, "copilotj");
+  }
+
+  /** A fingerprint that changes when the plugin JAR is updated. */
+  private static String jarFingerprint() {
+    // Fingerprint the embedded bundle itself, not the loading-class location.
+    // In dev the core loads from an exploded directory (no jar mtime), so keying
+    // off the bundle resource's mtime+size invalidates the cache on rebuild in
+    // BOTH dev (exploded classes) and production (jar).
+    try {
+      final URL url = McpLoader.class.getResource(BUNDLE_RESOURCE);
+      if (url != null) {
+        final java.net.URLConnection conn = url.openConnection();
+        return conn.getLastModified() + ":" + conn.getContentLengthLong();
+      }
+    } catch (final IOException ignored) {
+    }
+    return "dev";
+  }
+
+  private static String readText(final Path p) {
+    try {
+      return new String(Files.readAllBytes(p), "UTF-8").trim();
+    } catch (final IOException e) {
+      return "";
+    }
+  }
+
+  /**
+   * Child-first (parent-last) URLClassLoader: resolve classes from the bundle
+   * first, delegating to the parent only when the bundle does not define them.
+   * This isolates MCP's Jetty 12 / Jackson 2.18 from Fiji's versions, while
+   * letting shared types (EventHandler, JDK, SciJava) be supplied by the parent
+   * so MCP and the core share one {@link EventHandler} class identity.
+   */
+  private static final class ChildFirstLoader extends URLClassLoader {
+
+    ChildFirstLoader(final URL[] urls, final ClassLoader parent) {
+      super(urls, parent);
+    }
+
+    @Override
+    protected Class<?> loadClass(final String name, final boolean resolve)
+        throws ClassNotFoundException {
+      synchronized (getClassLoadingLock(name)) {
+        Class<?> c = findLoadedClass(name);
+        if (c == null) {
+          try {
+            c = findClass(name);
+          } catch (final ClassNotFoundException notInBundle) {
+            c = getParent().loadClass(name);
+          }
+        }
+        if (resolve) resolveClass(c);
+        return c;
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "dsh-baton",
+  "version": "0.1.0",
+  "description": "Pass the baton from Claude Code, Codex or any MCP client to a local DeepSeek Harness: an MCP server that hands off tasks, continues a specific session, shows the run live in Harness and hands the result back when it is done.",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "deepseek",
+    "deepseek-harness",
+    "codex",
+    "multi-agent",
+    "orchestration"
+  ],
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/dsh-baton-setup/SKILL.md",
+      "interface": {
+        "displayName": "DSH Baton",
+        "developerName": "JialaoLiu",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gemini-baton"
+version = "0.1.0"
+description = "A durable Gemini API subagent bridge exposed over MCP for Codex"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "gemini-baton contributors" }]
+dependencies = [
+  "google-genai>=2.33.0,<3",
+  "mcp>=1.30.0,<2",
+]
+
+[project.scripts]
+gemini-baton = "gemini_baton.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=9.2.0,<10",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gemini_baton"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+markers = [
+  "mcp_smoke: launches the MCP stdio server with the official MCP client",
+]
+
+[tool.uv]
+package = true

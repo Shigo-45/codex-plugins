@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gemini-baton",
+  "version": "0.1.0",
+  "description": "Write to me桌面本地Codex插件，集成write-to-me技能、Python gemini-baton桥接与MIT上游Gemini Web bridge独立bundle，提供统一工具、127.0.0.1本地设置页与自动Python依赖引导。",
+  "author": {
+    "name": "Guanyu Chen"
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/write-to-me-setup/SKILL.md",
+      "interface": {
+        "displayName": "Gemini Baton",
+        "shortDescription": "面向macOS的桌面本地Codex写作插件，支持CLI、API、AI Studio与Web多路线回退及本地可视化设置。",
+        "longDescription": "Write to me是一款已在macOS本机完成验证的桌面本地Codex写作插件（Linux与Windows安装及登录流程尚待验证，Windows还需后续适配fcntl依赖）。插件默认按CLI→API→AI Studio→Web顺序提供16条channel:model回退路线（各渠道依次涵盖Argon high、Carbon high、Neon xhigh与3.8 Flash high），支持通过write-to-me-setup技能调用gemini_settings(action=open)打开127.0.0.1本地设置页，可视化勾选并上下调整路线顺序、选填API key、触发AI Studio与Gemini Web浏览器登录或获取agy acp --login终端登录命令。首次运行时联网自动引导uv与锁定Python依赖，外部依赖缓存按代码内容隔离复用，运行状态与浏览器profile独立持久保存在外置状态目录；支持最多10个附件（单文件上限100MB）与未决任务恢复。",
+        "developerName": "Guanyu Chen",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ]
+      }
+    }
+  }
+}

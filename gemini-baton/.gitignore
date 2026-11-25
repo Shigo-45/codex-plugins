@@ -1,0 +1,14 @@
+.venv/
+.uv-cache/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+.test-keychain*
+.DS_Store
+# Local runtime state when GEMINI_BATON_STATE_DIR is pointed here.
+.gemini-baton-state/

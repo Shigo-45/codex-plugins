@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "dsh-baton": {
+      "command": "node",
+      "args": [
+        "${PLUGIN_ROOT}/scripts/launch-mcp.mjs"
+      ],
+      "cwd": "${PLUGIN_ROOT}",
+      "startup_timeout_sec": 300,
+      "tool_timeout_sec": 900,
+      "type": "stdio"
+    }
+  }
+}

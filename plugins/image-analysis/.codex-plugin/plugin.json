@@ -1,0 +1,20 @@
+{
+  "name": "image-analysis",
+  "version": "0.1.0",
+  "description": "Control a local Fiji/ImageJ instance through native MCP tools and reusable Jython scripts.",
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Image Analysis",
+    "shortDescription": "Analyze images in Fiji with Jython",
+    "developerName": "Local plugins",
+    "category": "Education & Research",
+    "capabilities": [
+      "Interactive",
+      "Read",
+      "Write"
+    ]
+  },
+  "onboardingSkill": "./skills/image-analysis-setup/SKILL.md"
+}

@@ -1,0 +1,66 @@
+NOTICE
+======
+
+Shigo-45/codex-plugins (shigo-plugins)
+
+Original repository layout, packaging scripts, marketplace manifests, and the
+core Gemini Baton bridge (`plugins/gemini-baton`) are released under the MIT
+License.
+
+This repository vendors and adapts third-party open-source software components.
+Each component retains its original license as detailed below. Upstream authors
+and projects are not affiliated with and do not endorse this repository or its
+local modifications.
+
+-------------------------------------------------------------------------------
+1. Gemini Web Bundle (included in `plugins/gemini-baton`)
+-------------------------------------------------------------------------------
+- Upstream Author: Andrew Li
+- License: MIT License
+- Local Adaptations:
+  - Bundled as a self-contained runtime component inside `plugins/gemini-baton`.
+  - Adapted to store browser profiles, authentication state, and runtime
+    artifacts in an external user state directory outside the plugin tree.
+  - Integrated with `gemini-baton` route selection, local settings UI sign-in
+    triggers, and pending task recovery.
+
+-------------------------------------------------------------------------------
+2. Image Analysis (`plugins/image-analysis`)
+-------------------------------------------------------------------------------
+- Upstream Project: neurogeom/copilotj (CopilotJ)
+  https://github.com/neurogeom/copilotj
+- License: Apache License, Version 2.0
+- Local Adaptations:
+  - Adapted for standalone MCP-only lifecycle operation (`http://127.0.0.1:3001/mcp`)
+    and Jython script development/validation workflows.
+  - Added dedicated Fiji instance ownership tracking via process PID and JVM
+    token so shutdown routines only terminate Fiji processes started by the
+    plugin after export completion.
+  - Packaged with both prebuilt runtime JARs (two JARs) and the corresponding
+    Java source code and Maven `pom.xml` under `plugins/image-analysis/source`,
+    plus dual Codex plugin manifests (`.codex-plugin/plugin.json`, `plugin.json`,
+    and `mcp.json`).
+
+-------------------------------------------------------------------------------
+3. DSH Baton (`plugins/dsh-baton`)
+-------------------------------------------------------------------------------
+- Upstream Project: JialaoLiu/dsh-baton (version 0.6.1)
+  https://github.com/JialaoLiu/dsh-baton
+- Upstream Author: Jialao Liu
+- License: MIT License
+- Local Adaptations:
+  - Vendored from a local installation of `dsh-baton` 0.6.1 with all personal
+    credentials, tokens, and runtime state removed.
+  - Added dual Codex plugin manifests (`.codex-plugin/plugin.json`,
+    `plugin.json`, and `mcp.json`), local MCP host/headless execution
+    compatibility adjustments, and workhorse skill configuration defaults
+    (`deepseek-flash` at `max` effort) paired with Gemini writing workflows.
+
+-------------------------------------------------------------------------------
+Non-Endorsement Disclaimer
+-------------------------------------------------------------------------------
+The names of upstream authors, contributors, and projects (including Andrew Li,
+neurogeom/copilotj, and Jialao Liu / dsh-baton) are used strictly for
+attribution and provenance as required by their respective open-source licenses.
+Nothing in this repository implies endorsement, sponsorship, or maintenance of
+`Shigo-45/codex-plugins` by any upstream author or organization.

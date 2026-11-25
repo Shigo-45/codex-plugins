@@ -1,0 +1,64 @@
+{
+  "name": "dsh-baton-host",
+  "version": "0.6.1",
+  "description": "DeepSeek Harness plugin for dsh-baton: adding it is the whole install. Switched on, it registers the dsh-baton MCP server for Claude Code and Codex, then takes the baton over a local, owner-only control socket, runs it in a specific session through the host's own session controller, and hands the result back when the turn is done.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": {
+      "default": "./lib/index.js"
+    },
+    "./client": {
+      "default": "./lib/client.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "dsh-baton-mcp": "0.6.1"
+  },
+  "license": "MIT",
+  "dsh": {
+    "manifestVersion": 1,
+    "engines": {
+      "dsh": ">=0.2.1-rc.2"
+    },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "relay",
+    "baton"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JialaoLiu/dsh-baton.git",
+    "directory": "host"
+  },
+  "homepage": "https://github.com/JialaoLiu/dsh-baton#readme",
+  "scripts": {
+    "prepublishOnly": "node ../scripts/version.mjs"
+  }
+}

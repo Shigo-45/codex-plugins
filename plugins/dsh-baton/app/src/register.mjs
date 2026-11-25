@@ -1,0 +1,494 @@
+// Registering the dsh-baton MCP server for Claude Code and Codex, user-wide, by writing
+// their config files directly. This needs no `claude` or `codex` on PATH (desktop-only
+// installs have neither) and no hand-editing of TOML.
+//
+// Two callers: `dsh-baton setup` (src/setup.mjs), and the Harness plugin, which runs
+// autoRegister() when it is switched on. So this module imports nothing that does work
+// at load time: it runs inside the Harness host process as well.
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { execFileSync } from 'node:child_process'
+import crypto from 'node:crypto'
+import { batonHome } from '../host/lib/socket.js'
+
+export const NAME = 'dsh-baton'
+// The name before the rename: its entries are removed so the tools are not listed twice.
+const OLD_NAME = 'dsh-bridge'
+
+export const claudeConfigPath = (env = process.env, home = os.homedir()) =>
+  path.join(env.CLAUDE_CONFIG_DIR || home, '.claude.json')
+export const codexConfigPath = (env = process.env, home = os.homedir()) =>
+  path.join(env.CODEX_HOME || path.join(home, '.codex'), 'config.toml')
+
+// ~/.claude.json: the top-level "mcpServers" map is Claude Code's user scope.
+export function editClaudeConfig(text, entry) {
+  const cfg = text.trim() ? JSON.parse(text) : {}
+  const servers = { ...(cfg.mcpServers ?? {}) }
+  delete servers[OLD_NAME]
+  if (entry) servers[NAME] = { type: 'stdio', command: entry.command, args: entry.args, env: entry.env ?? {} }
+  else delete servers[NAME]
+  return JSON.stringify({ ...cfg, mcpServers: servers }, null, 2) + '\n'
+}
+
+export function readClaudeEntry(text) {
+  const e = text.trim() ? JSON.parse(text).mcpServers?.[NAME] : null
+  if (!e?.command) return null
+  return { command: e.command, args: e.args ?? [], ...(e.env && Object.keys(e.env).length ? { env: e.env } : {}) }
+}
+
+const tomlString = (s) => (/['\n\r]/.test(s) ? JSON.stringify(s) : `'${s}'`)
+// Our own table and its sub-tables ([mcp_servers.dsh-baton], [mcp_servers.dsh-baton.env], …),
+// under the current name or the one before the rename.
+const OWN_TABLE = /^\s*\[\s*mcp_servers\s*\.\s*(["']?)dsh-(?:baton|bridge)\1\s*(?:\.[^\]]*)?\]\s*(?:#.*)?$/
+const ANY_TABLE = /^\s*\[/
+
+// ~/.codex/config.toml: replace any earlier dsh-baton tables with one fresh table at the
+// end. Codex stops a tool call after 300 s; the server keeps each wait under that, so no
+// tool_timeout_sec is needed.
+export function editCodexConfig(text, entry) {
+  const kept = []
+  let skipping = false
+  for (const line of text.split(/\r?\n/)) {
+    if (OWN_TABLE.test(line)) skipping = true
+    // The hook's marker line heads the hook block that follows, not our table before it.
+    else if (ANY_TABLE.test(line) || line === HOOK_MARK) skipping = false
+    if (!skipping) kept.push(line)
+  }
+  let out = kept.join('\n').replace(/\s+$/, '')
+  if (entry) {
+    out += `${out ? '\n\n' : ''}[mcp_servers.${NAME}]\ncommand = ${tomlString(entry.command)}\nargs = [${entry.args.map(tomlString).join(', ')}]`
+    const env = Object.entries(entry.env ?? {})
+    if (env.length) out += `\n\n[mcp_servers.${NAME}.env]\n${env.map(([k, v]) => `${k} = ${tomlString(v)}`).join('\n')}`
+  }
+  return out ? out + '\n' : ''
+}
+
+// The command, args and env of [mcp_servers.dsh-baton] (and its .env table), as setup
+// writes them (single-line strings).
+export function readCodexEntry(text) {
+  const str = String.raw`'[^'\n]*'|"(?:[^"\\\n]|\\.)*"`
+  const unquote = (s) => (s.startsWith("'") ? s.slice(1, -1) : JSON.parse(s))
+  let table = null
+  let command = null, args = []
+  const env = {}
+  for (const line of text.split(/\r?\n/)) {
+    if (ANY_TABLE.test(line)) {
+      const m = line.match(/^\s*\[\s*mcp_servers\s*\.\s*(["']?)dsh-baton\1\s*(\.\s*env\s*)?\]/)
+      table = m ? (m[2] ? 'env' : 'main') : null
+    } else if (table === 'main') {
+      const c = line.match(new RegExp(`^\\s*command\\s*=\\s*(${str})`))
+      if (c) command = unquote(c[1])
+      const a = line.match(/^\s*args\s*=\s*\[(.*)\]/)
+      if (a) args = [...a[1].matchAll(new RegExp(str, 'g'))].map((m) => unquote(m[0]))
+    } else if (table === 'env') {
+      const kv = line.match(new RegExp(`^\\s*([\\w-]+)\\s*=\\s*(${str})`))
+      if (kv) env[kv[1]] = unquote(kv[2])
+    }
+  }
+  return command ? { command, args, ...(Object.keys(env).length ? { env } : {}) } : null
+}
+
+// The Codex Stop hook that wakes Codex when a Harness run ends (src/codex-hook.mjs). Our
+// block is a marker line and the fixed lines written after it.
+const HOOK_MARK = '# dsh-baton: wakes Codex when a Harness run ends (dsh-baton codex-stop-hook)'
+// How long one hook call may wait; Codex kills the hook after the timeout in its config.
+export const HOOK_TIMEOUT_S = 24 * 3600
+// What Codex shows for the hook (in its hooks list, and while the hook runs).
+const HOOK_STATUS = 'dsh-baton: waiting for the Harness run'
+const OWN_HOOK_LINE = /^(\[\[hooks\.Stop\]\]|\[\[hooks\.Stop\.hooks\]\]|type = "command"|command = .*codex-stop-hook.*|statusMessage = .*|timeout = \d+)$/
+
+// A TOML string as written: basic ("..." with escapes, which JSON reads) or literal ('...',
+// what Codex itself writes when the text holds backslashes, as Windows paths do).
+function readTomlString(v) {
+  const t = v.trim()
+  if (/^'[^']*'$/.test(t)) return t.slice(1, -1)
+  try { return JSON.parse(t) } catch { return null }
+}
+
+// The same file? Windows paths ignore case and take either slash.
+const samePath = (a, b) => process.platform === 'win32'
+  ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
+  : a === b
+
+// The hook command for the server at `script`: cli.mjs beside it, run with the same node.
+export const codexHookCommand = (node, script) => `"${node}" "${path.join(path.dirname(script), 'cli.mjs')}" codex-stop-hook`
+
+// The hook entry in Codex's config is written once and then left as it is: Codex hashes
+// the entry (command, timeout, statusMessage) when the user trusts it, and asks again when
+// any of it changes. So the command names a small wrapper script at a fixed place,
+// ~/.dsh-baton/bin, and what moves (the node and the server's cli.mjs) goes in the script,
+// which is rewritten freely: Codex does not hash what the command runs.
+//
+// On Windows the script is a .cmd: Codex hands the command to the session's shell,
+// PowerShell (-Command) or cmd (/C), and they read a leading quoted path differently ("x"
+// is a string to PowerShell, a program to cmd); a bare path to a .cmd runs in both.
+export const hookWrapperPath = (home = batonHome(), platform = process.platform) =>
+  path.join(home, 'bin', platform === 'win32' ? 'codex-stop-hook.cmd' : 'codex-stop-hook')
+
+// What goes in config.toml as the hook command: the wrapper's path, written beside it.
+// A path with spaces (a user name with a space): on Windows its 8.3 short form, else
+// PowerShell's call form of the whole line (PowerShell being Codex's shell on Windows);
+// elsewhere the path in double quotes, for the shell Codex runs the command with.
+export function codexHookEntry(node, script, { platform = process.platform, home = batonHome(), shortPath = winShortPath } = {}) {
+  const line = codexHookCommand(node, script)
+  const file = hookWrapperPath(home, platform)
+  const sh = (p) => `'${p.replace(/'/g, `'\\''`)}'`
+  const body = platform === 'win32'
+    ? `@${line.replace(/%/g, '%%')}\r\n`
+    : `#!/bin/sh\nexec ${sh(node)} ${sh(path.join(path.dirname(script), 'cli.mjs'))} codex-stop-hook "$@"\n`
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  let old = null
+  try { old = fs.readFileSync(file, 'utf8') } catch { /* first time */ }
+  if (old !== body) fs.writeFileSync(file, body, { mode: 0o700 })
+  if (platform !== 'win32') fs.chmodSync(file, 0o700)
+  if (!/\s/.test(file)) return file
+  if (platform !== 'win32') return JSON.stringify(file)
+  const at = shortPath(file)
+  return at && !/\s/.test(at) ? at : `& ${line}`
+}
+
+// The 8.3 short form of an existing path, or null (8.3 names can be off for a drive).
+function winShortPath(p) {
+  try {
+    const out = execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"for %I in ("${p}") do @echo %~sI"`], { windowsHide: true, windowsVerbatimArguments: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim()
+    return out && fs.existsSync(out) ? out : null
+  } catch {
+    return null
+  }
+}
+
+// The node and cli.mjs a hook command line runs (plain, or PowerShell's call form).
+function hookTarget(command) {
+  const m = command?.match(/^(?:& )?"(.+?)" "(.+?)" codex-stop-hook$/)
+  return m ? { node: m[1], cli: m[2] } : null
+}
+
+// Add, replace (command given) or remove (null) the hook. An entry with this very command
+// is left where it is: Codex keys its trust by the hook's place and content, so moving or
+// rewriting it would ask the user to trust it again.
+//
+// Codex keeps its trust in [hooks.state."<config>:stop:<group>:<hook>"] tables, keyed by
+// place only. When ours is rewritten, the record left at its old or new place would still
+// read as trusted while Codex itself sees a modified hook and skips it; such records go.
+export function editCodexHook(text, command) {
+  if (command && hasHook(text, command)) return text
+  const out = editHookBlock(text, command)
+  return dropTrust(out, [hookPlace(text.split(/\r?\n/)), hookPlace(out.split('\n'))])
+}
+
+// Our entry is there exactly as this version writes it: this command, the status message
+// and the timeout (Codex may have rewritten its strings in single quotes).
+function hasHook(text, command) {
+  const lines = text.split(/\r?\n/)
+  const at = lines.findIndex((l) => /^command = /.test(l) && readTomlString(l.slice(10)) === command)
+  if (at < 0) return false
+  let start = at, end = at
+  while (start > 0 && lines[start - 1] !== '[[hooks.Stop.hooks]]' && OWN_HOOK_LINE.test(lines[start - 1])) start--
+  while (end + 1 < lines.length && OWN_HOOK_LINE.test(lines[end + 1])) end++
+  const kv = {}
+  for (const l of lines.slice(start, end + 1)) {
+    const m = l.match(/^(\w+) = (.*)$/)
+    if (m) kv[m[1]] = m[1] === 'timeout' ? Number(m[2]) : readTomlString(m[2])
+  }
+  const want = { type: 'command', command, statusMessage: HOOK_STATUS, timeout: HOOK_TIMEOUT_S }
+  return Object.keys(kv).length === 4 && Object.entries(want).every(([k, v]) => kv[k] === v)
+}
+
+// Where our hook sits among the Stop hooks ({ group, hook, at: its command line }), or null.
+function hookPlace(lines) {
+  const at = lines.findIndex((l) => /^command = .*codex-stop-hook/.test(l))
+  if (at < 0) return null
+  const before = lines.slice(0, at)
+  const group = before.filter((l) => l.trim() === '[[hooks.Stop]]').length - 1
+  const hook = before.slice(before.lastIndexOf('[[hooks.Stop]]')).filter((l) => l.trim() === '[[hooks.Stop.hooks]]').length - 1
+  return { group, hook, at }
+}
+
+const trustKey = ({ group, hook }) => new RegExp(`^\\[hooks\\.state\\.(["']).*:stop:${group}:${hook}\\1\\]`)
+
+// Remove Codex's trust tables (header and key lines) for the given places.
+function dropTrust(text, places) {
+  const keys = places.filter(Boolean).map(trustKey)
+  if (!keys.length) return text
+  const lines = text.split('\n')
+  const kept = []
+  for (let i = 0; i < lines.length; i++) {
+    if (!keys.some((k) => k.test(lines[i]))) { kept.push(lines[i]); continue }
+    while (i + 1 < lines.length && /^\s*[\w"'.-]+\s*=/.test(lines[i + 1])) i++
+    if (kept.at(-1) === '') kept.pop()
+  }
+  const out = kept.join('\n').replace(/\s+$/, '')
+  return out ? `${out}\n` : ''
+}
+
+function editHookBlock(text, command) {
+  const lines = text.split(/\r?\n/)
+  const kept = []
+  for (let i = 0; i < lines.length; i++) {
+    // Found by the marker, or by its command when another edit dropped the marker line.
+    const ours = lines[i] === HOOK_MARK || (lines[i] === '[[hooks.Stop]]' && lines.slice(i, i + 5).some((l) => /^command = .*codex-stop-hook/.test(l)))
+    if (!ours) { kept.push(lines[i]); continue }
+    if (kept.at(-1) === '') kept.pop() // the blank line put before the block
+    if (lines[i] !== HOOK_MARK) i--
+    while (i + 1 < lines.length && OWN_HOOK_LINE.test(lines[i + 1])) i++
+  }
+  let out = kept.join('\n').replace(/\s+$/, '')
+  if (command) out += `${out ? '\n\n' : ''}${HOOK_MARK}\n[[hooks.Stop]]\n[[hooks.Stop.hooks]]\ntype = "command"\ncommand = ${JSON.stringify(command)}\nstatusMessage = ${JSON.stringify(HOOK_STATUS)}\ntimeout = ${HOOK_TIMEOUT_S}`
+  return out ? `${out}\n` : ''
+}
+
+// Write only when the content changes, keep one backup, and replace the file atomically.
+export function rewrite(file, edit) {
+  const before = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+  const after = edit(before)
+  if (after === before) return 'unchanged'
+  if (before) fs.copyFileSync(file, `${file}.bak-dsh-baton`)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const tmp = `${file}.tmp-${process.pid}`
+  fs.writeFileSync(tmp, after, { mode: before ? fs.statSync(file).mode : 0o600 })
+  fs.renameSync(tmp, file)
+  return 'updated'
+}
+
+// Which clients are installed for this user, and where their config lives.
+export function clients(env = process.env, home = os.homedir()) {
+  const claude = claudeConfigPath(env, home)
+  const codex = codexConfigPath(env, home)
+  return [
+    { id: 'claude', label: 'Claude Code', file: claude, present: fs.existsSync(claude) || fs.existsSync(path.join(home, '.claude')), edit: editClaudeConfig, read: readClaudeEntry },
+    { id: 'codex', label: 'Codex', file: codex, present: fs.existsSync(path.dirname(codex)), edit: editCodexConfig, read: readCodexEntry },
+  ]
+}
+
+// The node to register: the one on PATH when it is this same binary, since that path
+// survives upgrades (Homebrew's /opt/homebrew/bin/node, not the versioned Cellar path
+// that process.execPath resolves to); otherwise the running binary itself.
+export function stableNodePath(env = process.env, execPath = process.execPath) {
+  const real = (p) => { try { return fs.realpathSync(p) } catch { return null } }
+  const target = real(execPath)
+  const names = process.platform === 'win32' ? ['node.exe'] : ['node']
+  for (const dir of (env.PATH ?? env.Path ?? '').split(path.delimiter).filter(Boolean)) {
+    for (const name of names) {
+      const candidate = path.join(dir, name)
+      if (candidate !== execPath && target && real(candidate) === target) return candidate
+    }
+  }
+  return execPath
+}
+
+export const MIN_NODE = [22, 15]
+export function nodeVersionOk(version) {
+  const [major, minor] = String(version).replace(/^v/, '').split('.').map(Number)
+  return major > MIN_NODE[0] || (major === MIN_NODE[0] && minor >= MIN_NODE[1])
+}
+
+// The user's own Node.js for the MCP server, preferred over Harness's runtime (see
+// harnessRuntime): the first `node` on PATH, then the usual install folders, never the
+// launcher scripts inside the Harness app (they only work from Harness itself), and only
+// a new enough one.
+export function findNode({ env = process.env, platform = process.platform, exclude = [], version = nodeVersion } = {}) {
+  const exe = platform === 'win32' ? 'node.exe' : 'node'
+  const p = platform === 'win32' ? path.win32 : path.posix
+  const dirs = (env.PATH ?? env.Path ?? '').split(p.delimiter).filter(Boolean)
+  if (platform === 'win32') {
+    dirs.push(...[env.NVM_SYMLINK, env.ProgramFiles && p.join(env.ProgramFiles, 'nodejs'), env.LOCALAPPDATA && p.join(env.LOCALAPPDATA, 'Programs', 'nodejs')].filter(Boolean))
+  } else {
+    dirs.push('/opt/homebrew/bin', '/usr/local/bin', '/usr/bin')
+  }
+  const real = (x) => { try { return fs.realpathSync(x) } catch { return x } }
+  const fold = (s) => (platform === 'win32' ? s.toLowerCase() : s)
+  const skip = exclude.filter(Boolean).map((x) => fold(real(x)))
+  const seen = new Set()
+  for (const dir of dirs) {
+    const candidate = p.join(dir, exe)
+    if (seen.has(candidate)) continue
+    seen.add(candidate)
+    if (!fs.existsSync(candidate)) continue
+    const at = fold(real(candidate))
+    if (skip.some((x) => at === x || at.startsWith(x + p.sep))) continue
+    if (nodeVersionOk(version(candidate))) return candidate
+  }
+  return null
+}
+
+function nodeVersion(bin) {
+  try {
+    return execFileSync(bin, ['--version'], { windowsHide: true, timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined } }).toString().trim()
+  } catch {
+    return ''
+  }
+}
+
+// The stable folder the server runs from when it came from a package cache (npx's, or
+// the Harness profile's): those can be cleared or replaced at any time.
+export const appDir = (home = batonHome()) => path.join(home, 'app')
+const APP_PARTS = ['src', 'host', 'patches', 'package.json', 'LICENSE']
+
+export function installApp(from, to = appDir()) {
+  fs.mkdirSync(to, { recursive: true })
+  for (const part of APP_PARTS) {
+    const src = path.join(from, part)
+    if (!fs.existsSync(src)) continue
+    // Replace each part whole, so files dropped in a newer version do not linger.
+    fs.rmSync(path.join(to, part), { recursive: true, force: true })
+    fs.cpSync(src, path.join(to, part), { recursive: true })
+  }
+  // A running server reloads when package.json's version or time changes (server.mjs).
+  // Copies can keep the source's time (Windows does; npm packs all files as 1985-10-26),
+  // so a same-version copy would go unnoticed: date it now, after everything else is in.
+  const pkg = path.join(to, 'package.json')
+  if (fs.existsSync(pkg)) { const t = new Date(); fs.utimesSync(pkg, t, t) }
+  return to
+}
+
+// A hash of the files installApp copies (paths and contents), to tell two copies of one
+// version apart.
+export function appDigest(root) {
+  const hash = crypto.createHash('sha256')
+  const walk = (rel) => {
+    const at = path.join(root, rel)
+    let st
+    try { st = fs.statSync(at) } catch { return }
+    if (st.isDirectory()) { for (const n of fs.readdirSync(at).sort()) walk(path.join(rel, n)); return }
+    hash.update(`${rel.split(path.sep).join('/')}\0`).update(fs.readFileSync(at)).update('\0')
+  }
+  for (const part of APP_PARTS) walk(part)
+  return hash.digest('hex')
+}
+
+const versionOf = (root) => { try { return JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')).version } catch { return null } }
+export function compareVersions(a, b) {
+  const parse = (v) => String(v).split('-')[0].split('.').map(Number)
+  const [x, y] = [parse(a), parse(b)]
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) - (y[i] || 0)
+  // A prerelease sorts before its release.
+  return (String(b).includes('-') ? 1 : 0) - (String(a).includes('-') ? 1 : 0)
+}
+
+// Without a Node.js of the user's own, the server runs on Harness's: the app binary in
+// Node mode, the way Harness runs its own scripts. Its path is the app's own (it moves
+// only if the app does), and if it ever breaks, the next Harness start rewrites it.
+export const harnessRuntime = (exe) => ({ command: exe, env: { ELECTRON_RUN_AS_NODE: '1' } })
+
+// Run by the Harness plugin when it is switched on (and on every Harness start, so a
+// plugin update brings the server along). `root` holds the MCP server package: the repo
+// checkout the plugin was added from, or the dsh-baton-mcp package installed with it.
+//   - The server is copied to ~/.dsh-baton/app, unless root is a git checkout (registered
+//     as is, like `setup` from a clone) or that copy is already as new.
+//   - An entry that already starts this server, or a working one that starts another copy
+//     (a clone, say), is left alone; a missing or broken one is (re)written.
+//   - It starts the server with the user's Node.js when there is a new enough one, else
+//     with `fallback` (Harness's own runtime, see harnessRuntime).
+// Never throws: the result says what happened to each client.
+export function autoRegister({ root, home = os.homedir(), env = process.env, node = null, harnessDir = null, fallback = null, find = findNode, app = appDir(batonHome(env, home)) } = {}) {
+  const result = { ok: false, version: versionOf(root), clients: [], error: null, node: null, runtime: null, codexHook: null }
+  try {
+    let serverRoot = root
+    if (!fs.existsSync(path.join(root, '.git')) && path.resolve(root) !== path.resolve(app)) {
+      const installed = versionOf(app)
+      const older = !installed || compareVersions(installed, result.version) < 0
+      // Same version, other files (a fix synced before its release): copied too.
+      const changed = !older && compareVersions(installed, result.version) === 0 && appDigest(app) !== appDigest(root)
+      if (older || changed || !fs.existsSync(path.join(app, 'src', 'server.mjs'))) installApp(root, app)
+      serverRoot = app
+    }
+    const script = path.join(serverRoot, 'src', 'server.mjs')
+    // Whether an entry can start a server. A bare command (`npx -y dsh-baton-mcp`, as MCP
+    // directories suggest) is the user's own choice and resolved on the client's PATH: kept.
+    // Harness's own binary only works in Node mode.
+    const bare = (cmd) => !/[\\/]/.test(cmd)
+    const works = (e) => {
+      if (!e?.command) return false
+      // `node /old/path/server.mjs` with that file gone is still broken.
+      if (bare(e.command)) return !e.args?.[0] || bare(e.args[0]) || fs.existsSync(e.args[0])
+      if (!fs.existsSync(e.command) || !e.args?.[0] || !fs.existsSync(e.args[0])) return false
+      return !fallback || path.resolve(e.command) !== path.resolve(fallback.command) || e.env?.ELECTRON_RUN_AS_NODE === '1'
+    }
+    const list = clients(env, home)
+    let launch = node ? { command: node } : null
+    for (const c of list) {
+      if (!c.present) { result.clients.push({ id: c.id, label: c.label, state: 'not-installed' }); continue }
+      try {
+        const text = fs.existsSync(c.file) ? fs.readFileSync(c.file, 'utf8') : ''
+        const current = c.read(text)
+        if (works(current)) {
+          const same = !bare(current.command) && path.resolve(current.args[0]) === path.resolve(script)
+          result.clients.push({ id: c.id, label: c.label, state: same ? 'unchanged' : 'kept', script: current.args[0] })
+          continue
+        }
+        if (!launch) {
+          const found = find({ env, exclude: [harnessDir] })
+          launch = found ? { command: found } : fallback
+        }
+        if (!launch) { result.clients.push({ id: c.id, label: c.label, state: 'failed', error: 'no-node' }); continue }
+        rewrite(c.file, (t) => c.edit(t, { ...launch, args: [script] }))
+        result.clients.push({ id: c.id, label: c.label, state: 'registered' })
+      } catch (e) {
+        result.clients.push({ id: c.id, label: c.label, state: 'failed', error: e.message })
+      }
+    }
+    result.codexHook = addCodexHook(list.find((c) => c.id === 'codex'), env, fallback, home)
+    result.node = launch?.command ?? null
+    result.runtime = !launch ? null : launch === fallback ? 'harness' : 'node'
+    const present = result.clients.filter((c) => c.state !== 'not-installed')
+    result.ok = present.length > 0 && present.every((c) => c.state !== 'failed')
+    if (!present.length) result.error = 'no-clients'
+    else if (present.some((c) => c.error === 'no-node')) result.error = 'no-node'
+  } catch (e) {
+    result.error = e.message
+  }
+  return result
+}
+
+// The Codex Stop hook goes in with the server, so Codex waits for runs without model
+// requests (see codex-hook.mjs). It runs cli.mjs beside the server Codex is set up with,
+// with the same node. Codex runs a new hook only once the user trusts it (Settings →
+// Hooks); until then dsh-baton keeps to dsh_wait. Not added when the server runs on
+// Harness's own runtime or a bare command (no node to name), or with DSH_BATON_CODEX_HOOK=0.
+function addCodexHook(codex, env, fallback, home) {
+  try {
+    if (!codex?.present || env.DSH_BATON_CODEX_HOOK === '0') return 'off'
+    const e = readCodexEntry(fs.existsSync(codex.file) ? fs.readFileSync(codex.file, 'utf8') : '')
+    const script = e?.args?.[0]
+    const usable = e && /[\\/]/.test(e.command) && !e.env?.ELECTRON_RUN_AS_NODE &&
+      (!fallback || path.resolve(e.command) !== path.resolve(fallback.command)) &&
+      script && fs.existsSync(path.join(path.dirname(script), 'cli.mjs'))
+    if (!usable) return 'skipped'
+    return rewrite(codex.file, (t) => editCodexHook(t, codexHookEntry(e.command, script, { home: batonHome(env, home) }))) === 'updated' ? 'added' : 'unchanged'
+  } catch {
+    return 'failed'
+  }
+}
+
+// Where the Stop hook notes each run (codex-hook.mjs): when, and the node and cli.mjs it
+// ran as, so a hook rewritten since can be told from the one Codex trusted.
+export const hookAliveFile = (env = process.env, home = os.homedir()) => path.join(batonHome(env, home), 'codex-hook', 'alive')
+
+// Whether Codex is set up with our Stop hook and the user has trusted it. Codex keeps its
+// trust next to the hooks, as [hooks.state."<config file>:stop:<group>:<hook>"] (or with
+// the key in single quotes, as on Windows where the path has backslashes) with the
+// hash of the hook it trusted. That hash is Codex's own, so a hook rewritten after it was
+// trusted is caught another way: Codex runs only trusted hooks, and each run notes what it
+// ran as. A trust record with no run noted yet (trusted, no turn ended since) counts.
+export function codexHookStatus(env = process.env, home = os.homedir()) {
+  const file = codexConfigPath(env, home)
+  if (!fs.existsSync(path.dirname(file))) return { codex: false, installed: false, trusted: false }
+  const lines = (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '').split(/\r?\n/)
+  const place = hookPlace(lines)
+  if (!place) return { codex: true, installed: false, trusted: false }
+  const { at } = place
+  const key = trustKey(place)
+  const s = lines.findIndex((l) => key.test(l))
+  const recorded = s >= 0 && lines.slice(s + 1).find((l) => /^\s*(\[|trusted_hash\s*=)/.test(l))?.trim().startsWith('trusted_hash')
+  if (!recorded) return { codex: true, installed: true, trusted: false }
+  let ran = null
+  try { ran = JSON.parse(fs.readFileSync(hookAliveFile(env, home), 'utf8')) } catch { /* not run yet, or noted before 0.6.1 */ }
+  if (!ran?.cli) return { codex: true, installed: true, trusted: true }
+  const real = (p) => { try { return fs.realpathSync(p) } catch { return p } }
+  const command = readTomlString(lines[at].replace(/^command = /, ''))
+  // Through the wrapper (any command but a node line) the trusted entry does not change
+  // when node moves: the trust record is all there is to check.
+  const t = hookTarget(command)
+  return { codex: true, installed: true, trusted: !t || (samePath(real(t.node), ran.node) && samePath(real(t.cli), ran.cli)) }
+}
